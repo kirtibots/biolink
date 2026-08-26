@@ -11,6 +11,29 @@ import logging
 
 from pymongo import MongoClient
 
+# ============================================================
+# PYROGRAM PEER-ID FIX
+# Fixes: ValueError: Peer id invalid: -100xxxxxxxxxx
+# ============================================================
+
+import pyrogram.utils as pyrogram_utils
+
+
+def fixed_get_peer_type(peer_id):
+    peer_id = str(peer_id)
+
+    if peer_id.startswith("-100"):
+        return "channel"
+
+    if peer_id.startswith("-"):
+        return "chat"
+
+    return "user"
+
+
+pyrogram_utils.get_peer_type = fixed_get_peer_type
+
+
 from pyrogram import Client, filters, idle
 from pyrogram.enums import ChatMemberStatus
 from pyrogram.errors import RPCError, FloodWait
@@ -73,24 +96,28 @@ MUTE_MINUTES = int(
     os.getenv("MUTE_MINUTES", "60")
 )
 
-# Telegram Logger Group/Channel
-LOGGER_GROUP_ID = os.getenv(
+LOGGER_GROUP_ID_RAW = os.getenv(
     "LOGGER_GROUP_ID",
-    "-1003979103138"
+    ""
 ).strip()
 
-if LOGGER_GROUP_ID:
-    try:
-        LOGGER_GROUP_ID = int(
-            LOGGER_GROUP_ID
-        )
-    except ValueError:
-        LOGGER_GROUP_ID = 0
-else:
+try:
+    LOGGER_GROUP_ID = int(LOGGER_GROUP_ID_RAW)
+except (ValueError, TypeError):
     LOGGER_GROUP_ID = 0
 
 PLUGIN_COUNT = int(
     os.getenv("PLUGIN_COUNT", "15")
+)
+
+LOGGER_BOT_NAME = os.getenv(
+    "LOGGER_BOT_NAME",
+    "Purvi 🐒"
+)
+
+LOGGER_POWERED_BY = os.getenv(
+    "LOGGER_POWERED_BY",
+    "PURVI-BOTS"
 )
 
 BOT_START_TIME = time.time()
@@ -115,24 +142,22 @@ log = logging.getLogger(
 # ============================================================
 
 if not API_ID:
-    raise RuntimeError(
-        "API_ID is missing."
-    )
+    raise RuntimeError("API_ID is missing.")
 
 if not API_HASH:
-    raise RuntimeError(
-        "API_HASH is missing."
-    )
+    raise RuntimeError("API_HASH is missing.")
 
 if not BOT_TOKEN:
-    raise RuntimeError(
-        "BOT_TOKEN is missing."
-    )
+    raise RuntimeError("BOT_TOKEN is missing.")
 
 if not MONGO_URI:
-    raise RuntimeError(
-        "MONGO_URI is missing."
-    )
+    raise RuntimeError("MONGO_URI is missing.")
+
+if WARN_LIMIT < 1:
+    raise RuntimeError("WARN_LIMIT must be at least 1.")
+
+if MUTE_MINUTES < 1:
+    raise RuntimeError("MUTE_MINUTES must be at least 1.")
 
 
 # ============================================================
@@ -156,9 +181,7 @@ mongo = MongoClient(
     serverSelectionTimeoutMS=10000
 )
 
-db = mongo[
-    "bio_link_cleaner"
-]
+db = mongo["bio_link_cleaner"]
 
 groups = db["groups"]
 auth_users = db["auth_users"]
@@ -269,14 +292,12 @@ HELP_TEXT = """
 # ============================================================
 
 def start_keyboard():
-
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
                 "⊞ ᴀᴅᴅ ᴍᴇ ɪɴ ʏᴏᴜʀ ɢʀᴏᴜᴘ ⊞",
                 url=(
-                    f"https://t.me/"
-                    f"{BOT_USERNAME}"
+                    f"https://t.me/{BOT_USERNAME}"
                     f"?startgroup=true"
                 )
             )
@@ -301,7 +322,6 @@ def start_keyboard():
 
 
 def about_keyboard():
-
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
@@ -323,7 +343,6 @@ def about_keyboard():
 
 
 def help_keyboard():
-
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
@@ -339,14 +358,12 @@ def help_keyboard():
 
 
 def warning_keyboard():
-
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
                 "✚ ᴀᴅᴅ ᴍᴇ",
                 url=(
-                    f"https://t.me/"
-                    f"{BOT_USERNAME}"
+                    f"https://t.me/{BOT_USERNAME}"
                     f"?startgroup=true"
                 )
             ),
@@ -369,15 +386,13 @@ LINK_PATTERNS = [
     r"tg://[^\s]+",
     (
         r"\b[a-z0-9-]+\."
-        r"(?:com|net|org|me|in|co|io|xyz|site|"
-        r"online|live|shop|dev|app|store|pro|"
-        r"tech|info|biz|cc|tv)\b"
+        r"(?:com|net|org|me|in|co|io|xyz|site|online|"
+        r"live|shop|dev|app|store|pro|tech|info|biz|cc|tv)\b"
     ),
 ]
 
 
 def has_bio_link(bio):
-
     if not bio:
         return False
 
@@ -395,28 +410,12 @@ def has_bio_link(bio):
 # BIO FETCH
 # ============================================================
 
-async def get_user_bio(
-    client,
-    user_id
-):
-
+async def get_user_bio(client, user_id):
     try:
+        chat = await client.get_chat(user_id)
 
-        chat = await client.get_chat(
-            user_id
-        )
-
-        bio = getattr(
-            chat,
-            "bio",
-            None
-        )
-
-        bio = (
-            str(bio).strip()
-            if bio
-            else ""
-        )
+        bio = getattr(chat, "bio", None)
+        bio = str(bio).strip() if bio else ""
 
         log.info(
             "BIO FETCH | user=%s | bio=%r",
@@ -427,24 +426,15 @@ async def get_user_bio(
         return bio
 
     except FloodWait as e:
-
         log.warning(
             "BIO FLOODWAIT | user=%s | wait=%s",
             user_id,
             e.value
         )
-
-        await asyncio.sleep(
-            e.value
-        )
-
-        return await get_user_bio(
-            client,
-            user_id
-        )
+        await asyncio.sleep(e.value)
+        return await get_user_bio(client, user_id)
 
     except RPCError as e:
-
         log.warning(
             "BIO RPC ERROR | user=%s | %s",
             user_id,
@@ -452,7 +442,6 @@ async def get_user_bio(
         )
 
     except Exception as e:
-
         log.warning(
             "BIO FETCH ERROR | user=%s | %s",
             user_id,
@@ -463,17 +452,11 @@ async def get_user_bio(
 
 
 # ============================================================
-# ADMIN / OWNER CHECK
+# ADMIN / OWNER
 # ============================================================
 
-async def is_admin_or_owner(
-    client,
-    chat_id,
-    user_id
-):
-
+async def is_admin_or_owner(client, chat_id, user_id):
     try:
-
         member = await client.get_chat_member(
             chat_id,
             user_id
@@ -488,11 +471,7 @@ async def is_admin_or_owner(
             return True
 
         value = str(
-            getattr(
-                status,
-                "value",
-                status
-            )
+            getattr(status, "value", status)
         ).lower()
 
         return value in (
@@ -502,11 +481,7 @@ async def is_admin_or_owner(
         )
 
     except FloodWait as e:
-
-        await asyncio.sleep(
-            e.value
-        )
-
+        await asyncio.sleep(e.value)
         return await is_admin_or_owner(
             client,
             chat_id,
@@ -514,20 +489,14 @@ async def is_admin_or_owner(
         )
 
     except Exception as e:
-
         log.warning(
             "ADMIN CHECK ERROR | %s",
             e
         )
-
         return False
 
 
-async def can_manage(
-    client,
-    message
-):
-
+async def can_manage(client, message):
     if not message.from_user:
         return False
 
@@ -542,21 +511,14 @@ async def can_manage(
 # DATABASE
 # ============================================================
 
-def inc_stat(
-    key,
-    amount=1
-):
-
+def inc_stat(key, amount=1):
     try:
-
         stats.update_one(
             {"_id": key},
             {"$inc": {"value": amount}},
             upsert=True
         )
-
     except Exception as e:
-
         log.warning(
             "STATS ERROR | %s",
             e
@@ -564,64 +526,35 @@ def inc_stat(
 
 
 def get_stat(key):
-
     try:
-
-        data = stats.find_one(
-            {"_id": key}
-        )
+        data = stats.find_one({"_id": key})
 
         if not data:
             return 0
 
-        return int(
-            data.get(
-                "value",
-                0
-            )
-        )
+        return int(data.get("value", 0))
 
     except Exception:
-
         return 0
 
 
-# ============================================================
-# WARNING DATABASE
-# ============================================================
-
-def get_warn(
-    chat_id,
-    user_id
-):
-
+def get_warn(chat_id, user_id):
     try:
-
         data = warnings.find_one({
             "chat_id": chat_id,
             "user_id": user_id
         })
 
         return int(
-            data.get(
-                "count",
-                0
-            )
+            data.get("count", 0)
         ) if data else 0
 
     except Exception:
-
         return 0
 
 
-def set_warn(
-    chat_id,
-    user_id,
-    count
-):
-
+def set_warn(chat_id, user_id, count):
     try:
-
         warnings.update_one(
             {
                 "chat_id": chat_id,
@@ -634,36 +567,22 @@ def set_warn(
             },
             upsert=True
         )
-
     except Exception as e:
-
         log.warning(
             "WARNING DB ERROR | %s",
             e
         )
 
 
-# ============================================================
-# AUTH DATABASE
-# ============================================================
-
-def is_authorized(
-    chat_id,
-    user_id
-):
-
+def is_authorized(chat_id, user_id):
     try:
-
         return (
             auth_users.find_one({
                 "chat_id": chat_id,
                 "user_id": user_id
-            })
-            is not None
+            }) is not None
         )
-
     except Exception:
-
         return False
 
 
@@ -671,47 +590,25 @@ def is_authorized(
 # TARGET USER
 # ============================================================
 
-async def get_target(
-    message
-):
-
+async def get_target(message):
     try:
-
         if (
             message.reply_to_message
-            and
-            message.reply_to_message.from_user
+            and message.reply_to_message.from_user
         ):
+            return message.reply_to_message.from_user
 
-            return (
-                message
-                .reply_to_message
-                .from_user
-            )
+        if len(message.command) > 1:
+            target = message.command[1].strip()
 
-        if len(
-            message.command
-        ) > 1:
-
-            target = (
-                message.command[1]
-                .strip()
-            )
-
-            if target.lstrip(
-                "-"
-            ).isdigit():
-
+            if target.lstrip("-").isdigit():
                 return await app.get_users(
                     int(target)
                 )
 
-            return await app.get_users(
-                target
-            )
+            return await app.get_users(target)
 
     except Exception as e:
-
         log.warning(
             "TARGET ERROR | %s",
             e
@@ -724,13 +621,8 @@ async def get_target(
 # TELEGRAM LOGGER
 # ============================================================
 
-async def send_log(
-    text
-):
-
-    # Always console logger
+async def send_log(text):
     try:
-
         clean_text = re.sub(
             r"<[^>]+>",
             "",
@@ -741,7 +633,6 @@ async def send_log(
             "TELEGRAM LOG | %s",
             clean_text
         )
-
     except Exception:
         pass
 
@@ -749,7 +640,6 @@ async def send_log(
         return
 
     try:
-
         await app.send_message(
             LOGGER_GROUP_ID,
             text,
@@ -757,14 +647,12 @@ async def send_log(
         )
 
     except FloodWait as e:
-
         log.warning(
             "LOGGER FLOODWAIT | %s seconds",
             e.value
         )
 
     except Exception as e:
-
         log.warning(
             "TELEGRAM LOGGER ERROR | %s",
             e
@@ -776,44 +664,34 @@ async def send_log(
 # ============================================================
 
 async def send_startup_log():
-
     if not LOGGER_GROUP_ID:
-
         log.warning(
             "LOGGER_GROUP_ID is not configured."
         )
-
         return
 
     try:
+        # Resolve/check logger peer before sending.
+        logger_chat = await app.get_chat(
+            LOGGER_GROUP_ID
+        )
 
         me = await app.get_me()
 
-        if me.username:
-
-            bot_name = (
+        bot_display_name = (
+            LOGGER_BOT_NAME
+            or (
                 f"@{me.username}"
+                if me.username
+                else me.first_name or "Bot"
             )
-
-        else:
-
-            bot_name = (
-                me.first_name
-                or "Bot"
-            )
-
-        pyrogram_version = "Unknown"
+        )
 
         try:
-
             import pyrogram
-
-            pyrogram_version = (
-                pyrogram.__version__
-            )
-
+            pyrogram_version = pyrogram.__version__
         except Exception:
-            pass
+            pyrogram_version = "Unknown"
 
         python_version = (
             f"{sys.version_info.major}."
@@ -824,9 +702,9 @@ async def send_startup_log():
         startup_text = f"""
 <b>❖ ʙᴏᴛ sᴛᴀʀᴛᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ
 
-🟢 ᴘᴜʀᴠɪ ʙᴏᴛs
+🟢 {bot_display_name}
 
-• ʙᴏᴛ : {bot_name} 🐒
+• ʙᴏᴛ : @{me.username or me.id} 🐒
 • ᴘʟᴜɢɪɴs : {PLUGIN_COUNT} ʟᴏᴀᴅᴇᴅ
 • ᴘʏʀᴏɢʀᴀᴍ : {pyrogram_version}
 • ᴘʏᴛʜᴏɴ : {python_version}
@@ -844,32 +722,38 @@ async def send_startup_log():
 
 ━━━━━━━━━━━━━━━━━━
 
-» ᴘᴏᴡᴇʀᴇᴅ ʙʏ : ᴘᴜʀᴠɪ-ʙᴏᴛs</b>
+» ᴘᴏᴡᴇʀᴇᴅ ʙʏ : {LOGGER_POWERED_BY}</b>
 """
 
         await app.send_photo(
-            chat_id=LOGGER_GROUP_ID,
+            chat_id=logger_chat.id,
             photo=START_IMAGE_PATH,
             caption=startup_text
         )
 
         log.info(
-            "STARTUP LOGGER SENT SUCCESSFULLY"
+            "STARTUP LOGGER SENT | chat=%s",
+            logger_chat.id
         )
 
     except FloodWait as e:
-
         log.warning(
             "STARTUP LOGGER FLOODWAIT | %s",
             e.value
         )
+        await asyncio.sleep(e.value)
 
-        await asyncio.sleep(
-            e.value
-        )
+        # Retry once after FloodWait.
+        try:
+            await send_startup_log()
+        except Exception as retry_error:
+            log.warning(
+                "STARTUP LOGGER RETRY FAILED | %s",
+                retry_error
+            )
 
     except Exception as e:
-
+        # Logger failure must NOT crash the bot.
         log.exception(
             "STARTUP LOGGER FAILED | %s",
             e
@@ -881,24 +765,16 @@ async def send_startup_log():
 # ============================================================
 
 @app.on_message(
-    filters.command("start")
-    & filters.private
+    filters.command("start") & filters.private
 )
-async def start_private(
-    _,
-    message
-):
-
+async def start_private(_, message):
     try:
-
         await message.reply_photo(
             photo=START_IMAGE_PATH,
             caption=START_TEXT,
             reply_markup=start_keyboard()
         )
-
     except Exception as e:
-
         log.warning(
             "START IMAGE FAILED | %s",
             e
@@ -912,24 +788,16 @@ async def start_private(
 
 
 @app.on_message(
-    filters.command("start")
-    & filters.group
+    filters.command("start") & filters.group
 )
-async def start_group(
-    _,
-    message
-):
-
+async def start_group(_, message):
     try:
-
         await message.reply_photo(
             photo=START_IMAGE_PATH,
             caption=START_TEXT,
             reply_markup=start_keyboard()
         )
-
     except Exception as e:
-
         log.warning(
             "GROUP START IMAGE FAILED | %s",
             e
@@ -947,15 +815,9 @@ async def start_group(
 # ============================================================
 
 @app.on_callback_query()
-async def callbacks(
-    _,
-    query
-):
-
+async def callbacks(_, query):
     try:
-
         if query.data == "about":
-
             await query.message.edit_text(
                 ABOUT_TEXT,
                 reply_markup=about_keyboard(),
@@ -963,7 +825,6 @@ async def callbacks(
             )
 
         elif query.data == "help":
-
             await query.message.edit_text(
                 HELP_TEXT,
                 reply_markup=help_keyboard(),
@@ -971,7 +832,6 @@ async def callbacks(
             )
 
         elif query.data == "back":
-
             await query.message.edit_text(
                 START_TEXT,
                 reply_markup=start_keyboard(),
@@ -981,14 +841,11 @@ async def callbacks(
         await query.answer()
 
     except Exception:
-
         try:
-
             await query.answer(
                 "Unable to update message.",
                 show_alert=True
             )
-
         except Exception:
             pass
 
@@ -997,16 +854,9 @@ async def callbacks(
 # PING
 # ============================================================
 
-@app.on_message(
-    filters.command("ping")
-)
-async def ping(
-    _,
-    message
-):
-
+@app.on_message(filters.command("ping"))
+async def ping(_, message):
     try:
-
         started = time.perf_counter()
 
         temp = await message.reply_text(
@@ -1015,39 +865,33 @@ async def ping(
 
         ping_ms = round(
             (
-                time.perf_counter()
-                - started
+                time.perf_counter() - started
             ) * 1000,
             2
         )
 
         uptime = int(
-            time.time()
-            - BOT_START_TIME
+            time.time() - BOT_START_TIME
         )
 
         days, remainder = divmod(
             uptime,
             86400
         )
-
         hours, remainder = divmod(
             remainder,
             3600
         )
-
         minutes, seconds = divmod(
             remainder,
             60
         )
 
         uptime_text = (
-            f"{days}ᴅ:{hours}ʜ:"
-            f"{minutes}ᴍ:{seconds}s"
+            f"{days}ᴅ:{hours}ʜ:{minutes}ᴍ:{seconds}s"
             if days
             else
-            f"{hours}ʜ:{minutes}ᴍ:"
-            f"{seconds}s"
+            f"{hours}ʜ:{minutes}ᴍ:{seconds}s"
         )
 
         text = f"""
@@ -1063,9 +907,7 @@ async def ping(
 """
 
         try:
-
             await temp.delete()
-
         except Exception:
             pass
 
@@ -1075,7 +917,6 @@ async def ping(
         )
 
     except Exception as e:
-
         log.warning(
             "PING ERROR | %s",
             e
@@ -1086,14 +927,8 @@ async def ping(
 # STATS
 # ============================================================
 
-@app.on_message(
-    filters.command("stats")
-)
-async def bot_stats(
-    _,
-    message
-):
-
+@app.on_message(filters.command("stats"))
+async def bot_stats(_, message):
     text = f"""
 <b>✦ ʙᴏᴛ sᴛᴀᴛs
 
@@ -1113,9 +948,7 @@ async def bot_stats(
 {get_stat("mutes")}</b>
 """
 
-    await message.reply_text(
-        text
-    )
+    await message.reply_text(text)
 
 
 # ============================================================
@@ -1123,30 +956,18 @@ async def bot_stats(
 # ============================================================
 
 @app.on_message(
-    filters.command("auth")
-    & filters.group
+    filters.command("auth") & filters.group
 )
-async def auth_cmd(
-    _,
-    message
-):
-
-    if not await can_manage(
-        app,
-        message
-    ):
-
+async def auth_cmd(_, message):
+    if not await can_manage(app, message):
         return await message.reply_text(
             "<b>❌ ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs "
             "ᴀɴᴅ ᴏᴡɴᴇʀs ᴄᴀɴ ᴜsᴇ ᴛʜɪs.</b>"
         )
 
-    target = await get_target(
-        message
-    )
+    target = await get_target(message)
 
     if not target:
-
         return await message.reply_text(
             "<b>» ʀᴇᴘʟʏ ᴛᴏ ᴀ ᴜsᴇʀ ᴏʀ ᴜsᴇ "
             "/auth user_id</b>"
@@ -1159,14 +980,8 @@ async def auth_cmd(
         },
         {
             "$set": {
-                "name": (
-                    target.first_name
-                    or ""
-                ),
-                "username": (
-                    target.username
-                    or ""
-                )
+                "name": target.first_name or "",
+                "username": target.username or ""
             }
         },
         upsert=True
@@ -1197,30 +1012,18 @@ async def auth_cmd(
 # ============================================================
 
 @app.on_message(
-    filters.command("unauth")
-    & filters.group
+    filters.command("unauth") & filters.group
 )
-async def unauth_cmd(
-    _,
-    message
-):
-
-    if not await can_manage(
-        app,
-        message
-    ):
-
+async def unauth_cmd(_, message):
+    if not await can_manage(app, message):
         return await message.reply_text(
             "<b>❌ ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs "
             "ᴀɴᴅ ᴏᴡɴᴇʀs ᴄᴀɴ ᴜsᴇ ᴛʜɪs.</b>"
         )
 
-    target = await get_target(
-        message
-    )
+    target = await get_target(message)
 
     if not target:
-
         return await message.reply_text(
             "<b>» ʀᴇᴘʟʏ ᴛᴏ ᴀ ᴜsᴇʀ ᴏʀ ᴜsᴇ "
             "/unauth user_id</b>"
@@ -1232,22 +1035,17 @@ async def unauth_cmd(
     })
 
     if result.deleted_count:
-
         text = (
             f"<b>✅ ᴜɴᴀᴜᴛʜᴏʀɪᴢᴇᴅ : "
             f"{target.mention}</b>"
         )
-
     else:
-
         text = (
             "<b>⚠️ ᴜsᴇʀ ᴡᴀs ɴᴏᴛ "
             "ᴀᴜᴛʜᴏʀɪᴢᴇᴅ.</b>"
         )
 
-    await message.reply_text(
-        text
-    )
+    await message.reply_text(text)
 
 
 # ============================================================
@@ -1255,19 +1053,10 @@ async def unauth_cmd(
 # ============================================================
 
 @app.on_message(
-    filters.command("authusers")
-    & filters.group
+    filters.command("authusers") & filters.group
 )
-async def authusers_cmd(
-    _,
-    message
-):
-
-    if not await can_manage(
-        app,
-        message
-    ):
-
+async def authusers_cmd(_, message):
+    if not await can_manage(app, message):
         return await message.reply_text(
             "<b>❌ ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs "
             "ᴀɴᴅ ᴏᴡɴᴇʀs ᴄᴀɴ ᴜsᴇ ᴛʜɪs.</b>"
@@ -1280,7 +1069,6 @@ async def authusers_cmd(
     )
 
     if not rows:
-
         return await message.reply_text(
             "<b>» ɴᴏ ᴀᴜᴛʜᴏʀɪᴢᴇᴅ "
             "ᴜsᴇʀs ғᴏᴜɴᴅ.</b>"
@@ -1291,22 +1079,13 @@ async def authusers_cmd(
         ""
     ]
 
-    for i, row in enumerate(
-        rows,
-        1
-    ):
-
-        username = row.get(
-            "username"
-        )
+    for i, row in enumerate(rows, 1):
+        username = row.get("username")
 
         name = (
             f"@{username}"
             if username
-            else row.get(
-                "name",
-                "User"
-            )
+            else row.get("name", "User")
         )
 
         lines.append(
@@ -1324,19 +1103,10 @@ async def authusers_cmd(
 # ============================================================
 
 @app.on_message(
-    filters.command("clearauthusers")
-    & filters.group
+    filters.command("clearauthusers") & filters.group
 )
-async def clearauthusers_cmd(
-    _,
-    message
-):
-
-    if not await can_manage(
-        app,
-        message
-    ):
-
+async def clearauthusers_cmd(_, message):
+    if not await can_manage(app, message):
         return await message.reply_text(
             "<b>❌ ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs "
             "ᴀɴᴅ ᴏᴡɴᴇʀs ᴄᴀɴ ᴜsᴇ ᴛʜɪs.</b>"
@@ -1362,9 +1132,7 @@ async def mute_user(
     user_id,
     minutes
 ):
-
     try:
-
         until_date = (
             int(time.time())
             + minutes * 60
@@ -1382,15 +1150,11 @@ async def mute_user(
         return True
 
     except FloodWait as e:
-
         log.warning(
             "MUTE FLOODWAIT | %s seconds",
             e.value
         )
-
-        await asyncio.sleep(
-            e.value
-        )
+        await asyncio.sleep(e.value)
 
         return await mute_user(
             chat_id,
@@ -1399,14 +1163,12 @@ async def mute_user(
         )
 
     except RPCError as e:
-
         log.warning(
             "MUTE RPC ERROR | %s",
             e
         )
 
     except Exception as e:
-
         log.warning(
             "MUTE ERROR | %s",
             e
@@ -1417,6 +1179,8 @@ async def mute_user(
 
 # ============================================================
 # BIO LINK CHECKER
+# Every offending message is deleted.
+# 3 warnings => mute.
 # ============================================================
 
 @app.on_message(
@@ -1426,13 +1190,8 @@ async def mute_user(
         | filters.caption
     )
 )
-async def bio_link_checker(
-    _,
-    message
-):
-
+async def bio_link_checker(_, message):
     try:
-
         if not message.from_user:
             return
 
@@ -1444,9 +1203,7 @@ async def bio_link_checker(
         chat_id = message.chat.id
         user_id = user.id
 
-        inc_stat(
-            "messages_checked"
-        )
+        inc_stat("messages_checked")
 
         log.info(
             "CHECK | group=%s | user=%s | msg=%s",
@@ -1455,78 +1212,58 @@ async def bio_link_checker(
             message.id
         )
 
-        # ----------------------------------------------------
-        # ADMIN / OWNER BYPASS
-        # ----------------------------------------------------
-
+        # Admin / owner bypass
         if await is_admin_or_owner(
             app,
             chat_id,
             user_id
         ):
-
             log.info(
                 "ADMIN BYPASS | user=%s",
                 user_id
             )
-
             return
 
-        # ----------------------------------------------------
-        # AUTH USER BYPASS
-        # ----------------------------------------------------
-
+        # Authorized user bypass
         if is_authorized(
             chat_id,
             user_id
         ):
-
             log.info(
                 "AUTH BYPASS | user=%s",
                 user_id
             )
-
             return
 
-        # ----------------------------------------------------
-        # GET BIO
-        # ----------------------------------------------------
-
+        # Fetch bio
         bio = await get_user_bio(
             app,
             user_id
         )
 
-        if not has_bio_link(
-            bio
-        ):
+        if not has_bio_link(bio):
             return
 
-        inc_stat(
-            "bio_links"
-        )
+        inc_stat("bio_links")
 
         log.warning(
-            "BIO LINK FOUND | group=%s | user=%s",
+            "BIO LINK FOUND | group=%s | user=%s | msg=%s",
             chat_id,
-            user_id
+            user_id,
+            message.id
         )
 
         # ----------------------------------------------------
-        # DELETE EVERY OFFENDING MESSAGE
+        # DELETE THIS MESSAGE EVERY TIME
         # ----------------------------------------------------
 
         deleted = False
 
         try:
-
             await message.delete()
-
             deleted = True
 
-            inc_stat(
-                "messages_deleted"
-            )
+            inc_stat("messages_deleted")
 
             log.info(
                 "MESSAGE DELETED | group=%s | user=%s | msg=%s",
@@ -1536,42 +1273,33 @@ async def bio_link_checker(
             )
 
         except FloodWait as e:
-
             log.warning(
                 "DELETE FLOODWAIT | %s seconds",
                 e.value
             )
 
-            await asyncio.sleep(
-                e.value
-            )
+            await asyncio.sleep(e.value)
 
             try:
-
                 await message.delete()
-
                 deleted = True
 
-                inc_stat(
-                    "messages_deleted"
-                )
+                inc_stat("messages_deleted")
 
             except Exception as retry_error:
-
                 log.warning(
                     "DELETE RETRY FAILED | %s",
                     retry_error
                 )
 
         except Exception as e:
-
             log.warning(
                 "MESSAGE DELETE ERROR | %s",
                 e
             )
 
         # ----------------------------------------------------
-        # WARNING
+        # WARNING COUNT
         # ----------------------------------------------------
 
         current_warn = get_warn(
@@ -1579,12 +1307,10 @@ async def bio_link_checker(
             user_id
         )
 
-        new_warn = (
-            current_warn + 1
-        )
+        new_warn = current_warn + 1
 
         # ----------------------------------------------------
-        # 3 WARN = MUTE
+        # 3 WARNINGS => MUTE
         # ----------------------------------------------------
 
         if new_warn >= WARN_LIMIT:
@@ -1596,16 +1322,10 @@ async def bio_link_checker(
             )
 
             if muted:
+                inc_stat("warnings")
+                inc_stat("mutes")
 
-                inc_stat(
-                    "warnings"
-                )
-
-                inc_stat(
-                    "mutes"
-                )
-
-                # Reset after successful mute
+                # Reset only after successful mute.
                 set_warn(
                     chat_id,
                     user_id,
@@ -1639,7 +1359,6 @@ async def bio_link_checker(
                 )
 
                 try:
-
                     await app.send_message(
                         chat_id,
                         f"""
@@ -1657,26 +1376,22 @@ async def bio_link_checker(
 """,
                         reply_markup=warning_keyboard()
                     )
-
                 except Exception as e:
-
                     log.warning(
                         "MUTE MESSAGE ERROR | %s",
                         e
                     )
 
             else:
-
-                # Keep warning if mute failed
+                # If mute failed, keep the warning at limit
+                # so next offending message retries mute.
                 set_warn(
                     chat_id,
                     user_id,
                     new_warn
                 )
 
-                inc_stat(
-                    "warnings"
-                )
+                inc_stat("warnings")
 
                 log.error(
                     "MUTE FAILED | group=%s | user=%s",
@@ -1704,7 +1419,7 @@ async def bio_link_checker(
             return
 
         # ----------------------------------------------------
-        # SAVE WARNING
+        # NORMAL WARNING
         # ----------------------------------------------------
 
         set_warn(
@@ -1713,9 +1428,7 @@ async def bio_link_checker(
             new_warn
         )
 
-        inc_stat(
-            "warnings"
-        )
+        inc_stat("warnings")
 
         log.warning(
             "WARNING | group=%s | user=%s | %s/%s",
@@ -1743,7 +1456,6 @@ async def bio_link_checker(
         )
 
         try:
-
             await app.send_message(
                 chat_id,
                 f"""
@@ -1760,27 +1472,20 @@ async def bio_link_checker(
 """,
                 reply_markup=warning_keyboard()
             )
-
         except Exception as e:
-
             log.warning(
                 "WARNING MESSAGE ERROR | %s",
                 e
             )
 
     except FloodWait as e:
-
         log.warning(
             "CHECKER FLOODWAIT | %s seconds",
             e.value
         )
-
-        await asyncio.sleep(
-            e.value
-        )
+        await asyncio.sleep(e.value)
 
     except Exception as e:
-
         log.exception(
             "BIO CHECKER ERROR | %s",
             e
@@ -1792,30 +1497,18 @@ async def bio_link_checker(
 # ============================================================
 
 @app.on_message(
-    filters.command("resetwarn")
-    & filters.group
+    filters.command("resetwarn") & filters.group
 )
-async def reset_warn_cmd(
-    _,
-    message
-):
-
-    if not await can_manage(
-        app,
-        message
-    ):
-
+async def reset_warn_cmd(_, message):
+    if not await can_manage(app, message):
         return await message.reply_text(
             "<b>❌ ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs "
             "ᴀɴᴅ ᴏᴡɴᴇʀs ᴄᴀɴ ᴜsᴇ ᴛʜɪs.</b>"
         )
 
-    target = await get_target(
-        message
-    )
+    target = await get_target(message)
 
     if not target:
-
         return await message.reply_text(
             "<b>» ʀᴇᴘʟʏ ᴛᴏ ᴀ ᴜsᴇʀ ᴏʀ ᴜsᴇ "
             "/resetwarn user_id</b>"
@@ -1837,6 +1530,7 @@ async def reset_warn_cmd(
 <b>♻️ ᴡᴀʀɴɪɴɢ ʀᴇsᴇᴛ
 
 👥 ɢʀᴏᴜᴘ : {message.chat.title or "Unknown"}
+🆔 ɢʀᴏᴜᴘ ɪᴅ : <code>{message.chat.id}</code>
 
 👤 ᴜsᴇʀ : {target.mention}
 🆔 ᴜsᴇʀ ɪᴅ : <code>{target.id}</code>
@@ -1851,57 +1545,59 @@ async def reset_warn_cmd(
 # ============================================================
 
 async def main():
-
     log.info(
         "=================================================="
     )
-
     log.info(
         "STARTING BIO LINK CLEANER..."
     )
 
     await app.start()
 
-    me = await app.get_me()
+    try:
+        me = await app.get_me()
 
-    log.info(
-        "BOT ONLINE | @%s",
-        me.username or me.id
-    )
+        log.info(
+            "BOT ONLINE | @%s",
+            me.username or me.id
+        )
 
-    log.info(
-        "WARN LIMIT | %s",
-        WARN_LIMIT
-    )
+        log.info(
+            "WARN LIMIT | %s",
+            WARN_LIMIT
+        )
 
-    log.info(
-        "MUTE MINUTES | %s",
-        MUTE_MINUTES
-    )
+        log.info(
+            "MUTE MINUTES | %s",
+            MUTE_MINUTES
+        )
 
-    log.info(
-        "LOGGER GROUP | %s",
-        LOGGER_GROUP_ID or "DISABLED"
-    )
+        log.info(
+            "LOGGER GROUP | %s",
+            LOGGER_GROUP_ID or "DISABLED"
+        )
 
-    # Send startup message/photo
-    await send_startup_log()
+        await send_startup_log()
 
-    log.info(
-        "BIO LINK CLEANER IS READY."
-    )
+        log.info(
+            "BIO LINK CLEANER IS READY."
+        )
 
-    log.info(
-        "=================================================="
-    )
+        log.info(
+            "=================================================="
+        )
 
-    await idle()
+        await idle()
 
-    log.info(
-        "STOPPING BIO LINK CLEANER..."
-    )
+    finally:
+        log.info(
+            "STOPPING BIO LINK CLEANER..."
+        )
 
-    await app.stop()
+        try:
+            await app.stop()
+        except Exception:
+            pass
 
 
 # ============================================================
@@ -1909,21 +1605,15 @@ async def main():
 # ============================================================
 
 if __name__ == "__main__":
-
     try:
-
-        asyncio.run(
-            main()
-        )
+        asyncio.run(main())
 
     except KeyboardInterrupt:
-
         log.info(
             "BOT STOPPED BY USER."
         )
 
     except Exception as e:
-
         log.exception(
             "FATAL ERROR | %s",
             e
