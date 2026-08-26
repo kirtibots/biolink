@@ -2,37 +2,37 @@ import os, re, time, asyncio, logging
 from pymongo import MongoClient
 from pyrogram import Client, filters, idle
 from pyrogram.enums import ChatMemberStatus
-from pyrogram.errors import FloodWait, RPCError
-from pyrogram.types import (
-    InlineKeyboardMarkup, InlineKeyboardButton, ChatPermissions
-)
+from pyrogram.errors import FloodWait
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ChatPermissions
 
 # ================= CONFIG =================
 
-API_ID = int(os.getenv("API_ID", "21692000"))
-API_HASH = os.getenv("API_HASH", "1e37856155373adf855c061c49847ced")
+API_ID = int(os.getenv("API_ID", "0"))
+API_HASH = os.getenv("API_HASH", "")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 MONGO_URI = os.getenv("MONGO_URI", "")
 
-BOT_USERNAME = os.getenv("BOT_USERNAME", "Radhaprobot").lstrip("@")
+BOT_USERNAME = os.getenv("BOT_USERNAME", "Nidhiprobot").lstrip("@")
 SUPPORT_URL = os.getenv("SUPPORT_URL", "https://t.me/annu_support")
 UPDATE_URL = os.getenv("UPDATE_URL", "https://t.me/annu_updates")
-OWNER_URL = os.getenv("OWNER_URL", "https://t.me/")
-START_IMAGE = os.getenv("START_IMAGE_PATH", "https://h.uguu.se/FekWWcsz.jpg")
-PING_IMAGE = os.getenv("PING_IMAGE_PATH", START_IMAGE)
+OWNER_URL = os.getenv("OWNER_URL", "https://t.me/Only_badnam")
+LOGGER_ID = int(os.getenv("LOGGER_GROUP_ID", "-1003979103138"))
 
 WARN_LIMIT = int(os.getenv("WARN_LIMIT", "3"))
 MUTE_MINUTES = int(os.getenv("MUTE_MINUTES", "60"))
-LOGGER_ID = int(os.getenv("LOGGER_GROUP_ID", "0"))
 
-if not BOT_TOKEN or not MONGO_URI:
-    raise RuntimeError("BOT_TOKEN and MONGO_URI are required.")
+if not API_ID or not API_HASH or not BOT_TOKEN or not MONGO_URI:
+    raise RuntimeError(
+        "API_ID, API_HASH, BOT_TOKEN and MONGO_URI are required."
+    )
 
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] %(levelname)s: %(message)s"
 )
-log = logging.getLogger("BIO-BOT")
+log = logging.getLogger("BIO-LINK-BOT")
+
+START_TIME = time.time()
 
 # ================= APP =================
 
@@ -40,113 +40,105 @@ app = Client(
     "biolink_cleaner",
     api_id=API_ID,
     api_hash=API_HASH,
-    bot_token=BOT_TOKEN
+    bot_token=BOT_TOKEN,
+    workers=16
 )
 
 # ================= DATABASE =================
 
-mongo = MongoClient(MONGO_URI, serverSelectionTimeoutMS=10000)
+mongo = MongoClient(
+    MONGO_URI,
+    serverSelectionTimeoutMS=10000
+)
+
 db = mongo["bio_link_cleaner"]
-
-groups = db.groups
-auth = db.auth_users
-warns = db.warnings
-stats = db.stats
-
-def stat(name, n=1):
-    try:
-        stats.update_one(
-            {"_id": name},
-            {"$inc": {"value": n}},
-            upsert=True
-        )
-    except Exception:
-        pass
-
-def get_stat(name):
-    try:
-        x = stats.find_one({"_id": name})
-        return x.get("value", 0) if x else 0
-    except Exception:
-        return 0
-
-def get_warn(chat_id, user_id):
-    x = warns.find_one({"chat_id": chat_id, "user_id": user_id})
-    return x.get("count", 0) if x else 0
-
-def set_warn(chat_id, user_id, count):
-    warns.update_one(
-        {"chat_id": chat_id, "user_id": user_id},
-        {"$set": {"count": count}},
-        upsert=True
-    )
+auth_users = db["auth_users"]
+warnings = db["warnings"]
+stats = db["stats"]
 
 # ================= TEXT =================
 
 START_TEXT = """
 <b>❖ ʜєʏ ʙᴧʙʏ !!
 
-𝐁ɪᴏ 𝐋ɪɴᴋ 𝐂ʟᴇᴀɴᴇʀ 🚨 ɪs ᴧʟɪᴠє 🥀
+𝐁ɪᴏ 𝐋ɪɴᴋ 𝐂ʟᴇᴀɴᴇʀ 🚨 ɪs ᴧʟɪᴠє 🥀 ᴧηᴅ
+ᴡσʀᴋɪηɢ ꜰɪηє ᴡɪᴛʜ
 
 ➥ ᴀ ʙɪᴏ ʟɪɴᴋ ᴄʜᴇᴄᴋᴇʀ ʙᴏᴛ ғᴏʀ ɢʀᴏᴜᴘs.
-➥ ʙɪᴏ ʟɪɴᴋ ᴜsᴇʀs ᴍᴇssᴀɢᴇ ᴅᴇʟᴇᴛᴇ.
-➥ ᴡᴀʀɴ & ᴍᴜᴛᴇ sʏsᴛᴇᴍ.
-➥ ᴀᴅᴍɪɴ & ᴀᴜᴛʜ ᴄᴏᴍᴍᴀɴᴅs.
 
-➳ ᴄʟɪᴄᴋ ʜᴇʟᴘ ᴛᴏ sᴇᴇ ᴄᴏᴍᴍᴀɴᴅs.
+➥ ᴅᴇʟᴇᴛᴇ ᴍᴇssᴀɢᴇs ᴡʜᴇɴ ᴜsᴇʀ ʜᴀs ᴀ ʟɪɴᴋ ɪɴ ʙɪᴏ.
+➥ sᴜᴘᴘᴏʀᴛ ᴀᴜᴛʜ ᴜsᴇʀ & ᴀᴅᴍɪɴ ᴄᴏᴍᴍᴀɴᴅs.
+➥ ᴡᴀʀɴ & ᴍᴜᴛᴇ ᴜsᴇʀs ᴡɪᴛʜ ᴍᴇɴᴛɪᴏɴ.
+
+➳ ᴄʟɪᴄᴋ ʜᴇʟᴘ ᴛᴏ sᴇᴇ ᴀʟʟ ᴄᴏᴍᴍᴀɴᴅs.
 
 ✦ 𝐏σᴡєʀєᴅ вʏ » ᴘᴜʀᴠɪ ʙᴏᴛꜱ</b>
 """
 
 ABOUT_TEXT = """
-<b>❖ ᴀʙᴏᴜᴛ ᴍᴇ
+<b>────────────────────
 
-➥ ʙɪᴏ ʟɪɴᴋ ᴄʜᴇᴄᴋᴇʀ ғᴏʀ ɢʀᴏᴜᴘs.
-➥ ᴘʏᴛʜᴏɴ + ᴘʏʀᴏɢʀᴀᴍ + ᴍᴏɴɢᴏᴅʙ.
-➥ ᴡᴀʀɴɪɴɢ & ᴀᴜᴛᴏ ᴍᴜᴛᴇ.
+❖ ᴀ ʙɪᴏ ʟɪɴᴋ ᴄʜᴇᴄᴋᴇʀ ʙᴏᴛ ғᴏʀ ɢʀᴏᴜᴘs.
+
+● ᴡʀɪᴛᴛєη ɪη » ᴘʏᴛʜση
+● ᴅᴀᴛᴀʙᴀsᴇ » ᴍᴏɴɢᴏ-ᴅʙ
+
+➥ ᴍᴀɪɴᴛᴀɪɴ ʏᴏᴜʀ ɢʀᴏᴜᴘ.
+➥ ᴅᴇʟᴇᴛᴇ ʙɪᴏ ʟɪɴᴋ ᴜsᴇʀ ᴍᴇssᴀɢᴇs.
+➥ ᴡᴀʀɴ & ᴍᴜᴛᴇ ᴜsᴇʀs.
 
 ✦ ᴘᴏᴡᴇʀᴇᴅ ʙʏ » ᴘᴜʀᴠɪ ʙᴏᴛꜱ</b>
 """
 
-HELP_TEXT = """
+HELP_TEXT = f"""
 <b>❖ ʜᴇʟᴘ
 
+⊚ ᴜsᴇʀ ᴄᴏᴍᴍᴀɴᴅs
+
 /start - sᴛᴀʀᴛ ʙᴏᴛ
-/ping - ᴄʜᴇᴄᴋ sᴛᴀᴛᴜs
-/stats - ʙᴏᴛ sᴛᴀᴛs
+/ping - ᴄʜᴇᴄᴋ ʙᴏᴛ
+/stats - sʜᴏᴡ sᴛᴀᴛs
 
-/auth - ᴀᴜᴛʜᴏʀɪᴢᴇ
-/unauth - ʀᴇᴍᴏᴠᴇ ᴀᴜᴛʜ
-/authusers - ᴀᴜᴛʜ ᴜsᴇʀs
-/clearauthusers - ᴄʟᴇᴀʀ ᴀᴜᴛʜ
-/resetwarn - ʀᴇsᴇᴛ ᴡᴀʀɴɪɴɢ
+⊚ ᴀᴜᴛʜᴏʀɪᴢᴀᴛɪᴏɴ
 
-❖ ᴡᴀʀɴ ʟɪᴍɪᴛ : {WARN_LIMIT}
-❖ ᴍᴜᴛᴇ : {MUTE_MINUTES} ᴍɪɴᴜᴛᴇs</b>
-""".format(
-    WARN_LIMIT=WARN_LIMIT,
-    MUTE_MINUTES=MUTE_MINUTES
-)
+/auth - ᴀᴜᴛʜᴏʀɪᴢᴇ ᴜsᴇʀ
+/unauth - ᴜɴᴀᴜᴛʜᴏʀɪᴢᴇ
+/authusers - ᴀᴜᴛʜᴏʀɪᴢᴇᴅ ᴜsᴇʀs
+/clearauthusers - ᴄʟᴇᴀʀ ᴀᴜᴛʜ ᴜsᴇʀs
+/resetwarn - ʀᴇsᴇᴛ ᴡᴀʀɴ
+
+━━━━━━━━━━━━━━━━━━
+
+➥ 1sᴛ ᴡᴀʀɴɪɴɢ
+➥ 2ɴᴅ ᴡᴀʀɴɪɴɢ
+➥ {WARN_LIMIT}ʀᴅ ᴡᴀʀɴɪɴɢ ➜ ᴀᴜᴛᴏ ᴍᴜᴛᴇ
+
+✦ ᴍᴜᴛᴇ ᴛɪᴍᴇ : {MUTE_MINUTES} ᴍɪɴᴜᴛᴇs</b>
+"""
 
 # ================= BUTTONS =================
 
-def home_kb():
+def home_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(
-            "⊞ ᴀᴅᴅ ᴍᴇ ɪɴ ʏᴏᴜʀ ɢʀᴏᴜᴘ ⊞",
-            url=f"https://t.me/{BOT_USERNAME}?startgroup=true"
-        )],
+        [
+            InlineKeyboardButton(
+                "⊞ ᴀᴅᴅ ᴍᴇ ɪɴ ʏᴏᴜʀ ɢʀᴏᴜᴘ ⊞",
+                url=f"https://t.me/{BOT_USERNAME}?startgroup=true"
+            )
+        ],
         [
             InlineKeyboardButton("≡ ᴏᴡɴᴇʀ ≡", url=OWNER_URL),
             InlineKeyboardButton("≡ ᴀʙᴏᴜᴛ ≡", callback_data="about")
         ],
-        [InlineKeyboardButton(
-            "≡ ʜᴇʟᴘ & ᴄᴏᴍᴍᴀɴᴅs ≡",
-            callback_data="help"
-        )]
+        [
+            InlineKeyboardButton(
+                "≡ ʜᴇʟᴘ & ᴄᴏᴍᴍᴀɴᴅs ≡",
+                callback_data="help"
+            )
+        ]
     ])
 
-def about_kb():
+def about_keyboard():
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("≡ sᴜᴘᴘᴏʀᴛ ≡", url=SUPPORT_URL),
@@ -155,7 +147,7 @@ def about_kb():
         [InlineKeyboardButton("≡ ʙᴀᴄᴋ ≡", callback_data="back")]
     ])
 
-def help_kb():
+def help_keyboard():
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("≡ sᴜᴘᴘᴏʀᴛ ≡", url=SUPPORT_URL),
@@ -163,140 +155,209 @@ def help_kb():
         ]
     ])
 
-# ================= BIO CHECK =================
+# ================= DATABASE =================
 
-LINK_RE = re.compile(
-    r"(https?://|www\.|t\.me/|telegram\.me/|telegram\.dog/|tg://|"
-    r"\b[\w-]+\.(com|net|org|me|in|co|io|xyz|site|online|live|shop|"
-    r"dev|app|store|pro|tech|info|biz|cc|tv)\b)",
-    re.I
-)
-
-async def get_bio(user_id):
+def increment(name):
     try:
-        u = await app.get_chat(user_id)
-        return (u.bio or "").strip()
-    except FloodWait as e:
-        await asyncio.sleep(e.value)
-        return await get_bio(user_id)
+        stats.update_one(
+            {"_id": name},
+            {"$inc": {"value": 1}},
+            upsert=True
+        )
     except Exception:
-        return ""
+        pass
+
+def get_stat(name):
+    try:
+        x = stats.find_one({"_id": name})
+        return int(x.get("value", 0)) if x else 0
+    except Exception:
+        return 0
+
+def get_warn(chat_id, user_id):
+    try:
+        x = warnings.find_one({
+            "chat_id": chat_id,
+            "user_id": user_id
+        })
+        return int(x.get("count", 0)) if x else 0
+    except Exception:
+        return 0
+
+def set_warn(chat_id, user_id, count):
+    warnings.update_one(
+        {
+            "chat_id": chat_id,
+            "user_id": user_id
+        },
+        {"$set": {"count": count}},
+        upsert=True
+    )
+
+# ================= HELPERS =================
 
 async def is_admin(chat_id, user_id):
     try:
-        m = await app.get_chat_member(chat_id, user_id)
-        return m.status in (
+        member = await app.get_chat_member(chat_id, user_id)
+        return member.status in (
             ChatMemberStatus.OWNER,
             ChatMemberStatus.ADMINISTRATOR
         )
     except Exception:
         return False
 
-async def is_auth(chat_id, user_id):
+async def get_bio(user_id):
     try:
-        return auth.find_one({
+        chat = await app.get_chat(user_id)
+        return (chat.bio or "").strip()
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+        return await get_bio(user_id)
+    except Exception as e:
+        log.warning("BIO ERROR: %s", e)
+        return ""
+
+def is_auth(chat_id, user_id):
+    try:
+        return auth_users.find_one({
             "chat_id": chat_id,
             "user_id": user_id
         }) is not None
     except Exception:
         return False
 
-# ================= START =================
+# ================= LINK DETECTOR =================
 
-@app.on_message(filters.command("start") & filters.private)
-async def start(_, m):
-    try:
-        await m.reply_photo(
-            START_IMAGE,
-            caption=START_TEXT,
-            reply_markup=home_kb()
-        )
-    except Exception:
-        await m.reply_text(
-            START_TEXT,
-            reply_markup=home_kb()
-        )
+LINK_RE = re.compile(
+    r"(https?://[^\s]+|www\.[^\s]+|"
+    r"(?:t\.me|telegram\.me|telegram\.dog)/[^\s]+|"
+    r"tg://[^\s]+|"
+    r"\b[\w-]+\.(?:com|net|org|me|in|co|io|xyz|"
+    r"site|online|live|shop|dev|app|store|pro|"
+    r"tech|info|biz|cc|tv)\b)",
+    re.IGNORECASE
+)
 
-@app.on_message(filters.command("start") & filters.group)
-async def group_start(_, m):
+# ================= PRIVATE START =================
+
+@app.on_message(
+    filters.private & filters.command("start"),
+    group=0
+)
+async def private_start(client, message):
     try:
-        await m.reply_photo(
-            START_IMAGE,
-            caption=START_TEXT,
-            reply_markup=home_kb()
-        )
-    except Exception:
-        await m.reply_text(
+        await message.reply_text(
             START_TEXT,
-            reply_markup=home_kb()
+            reply_markup=home_keyboard(),
+            disable_web_page_preview=True
         )
+        log.info(
+            "PRIVATE START OK | user=%s",
+            message.from_user.id if message.from_user else "unknown"
+        )
+    except Exception as e:
+        log.exception("PRIVATE START ERROR: %s", e)
+
+# ================= GROUP START =================
+
+@app.on_message(
+    filters.group & filters.command("start"),
+    group=0
+)
+async def group_start(client, message):
+    try:
+        await message.reply_text(
+            START_TEXT,
+            reply_markup=home_keyboard(),
+            disable_web_page_preview=True
+        )
+    except Exception as e:
+        log.exception("GROUP START ERROR: %s", e)
 
 # ================= CALLBACK =================
 
 @app.on_callback_query()
-async def callbacks(_, q):
+async def callbacks(client, query):
     try:
-        if q.data == "about":
-            await q.message.edit_text(
+        if query.data == "about":
+            await query.message.edit_text(
                 ABOUT_TEXT,
-                reply_markup=about_kb()
+                reply_markup=about_keyboard()
             )
-        elif q.data == "help":
-            await q.message.edit_text(
+
+        elif query.data == "help":
+            await query.message.edit_text(
                 HELP_TEXT,
-                reply_markup=help_kb()
+                reply_markup=help_keyboard()
             )
-        elif q.data == "back":
-            await q.message.edit_text(
+
+        elif query.data == "back":
+            await query.message.edit_text(
                 START_TEXT,
-                reply_markup=home_kb()
+                reply_markup=home_keyboard()
             )
-        await q.answer()
+
+        await query.answer()
+
     except Exception:
         try:
-            await q.answer("Error", show_alert=True)
+            await query.answer(
+                "Unable to update.",
+                show_alert=True
+            )
         except Exception:
             pass
 
 # ================= PING =================
 
-START_TIME = time.time()
-
 @app.on_message(filters.command("ping"))
-async def ping(_, m):
-    ms = round((time.time() - START_TIME) * 1000, 2)
-    up = int(time.time() - START_TIME)
+async def ping(client, message):
+    try:
+        start = time.perf_counter()
 
-    d, r = divmod(up, 86400)
-    h, r = divmod(r, 3600)
-    mi, s = divmod(r, 60)
+        temp = await message.reply_text(
+            "<b>ᴘɪɴɢɪɴɢ... ❤️‍🔥</b>"
+        )
 
-    text = f"""
-<b>ʜєʏ ʙᴧʙʏ !!
+        ms = round(
+            (time.perf_counter() - start) * 1000,
+            2
+        )
+
+        uptime = int(time.time() - START_TIME)
+        days, rem = divmod(uptime, 86400)
+        hours, rem = divmod(rem, 3600)
+        minutes, seconds = divmod(rem, 60)
+
+        try:
+            await temp.delete()
+        except Exception:
+            pass
+
+        await message.reply_text(
+            f"""<b>ʜєʏ ʙᴧʙʏ !!
 
 𝐁ɪᴏ 𝐋ɪɴᴋ 𝐂ʟᴇᴀɴᴇʀ 🚨 ɪs ᴧʟɪᴠє 🥀
 
 ➥ ᴘɪɴɢ : {ms} ms
-➥ ᴜᴘᴛɪᴍᴇ : {d}ᴅ {h}ʜ {mi}ᴍ {s}s
+➥ ᴜᴘᴛɪᴍᴇ : {days}ᴅ {hours}ʜ {minutes}ᴍ {seconds}s
 
-✦ ᴘᴏᴡᴇʀᴇᴅ ʙʏ » ᴘᴜʀᴠɪ ʙᴏᴛꜱ</b>
-"""
+✦ ᴘᴏᴡᴇʀᴇᴅ ʙʏ » ᴘᴜʀᴠɪ ʙᴏᴛꜱ</b>"""
+        )
 
-    try:
-        await m.reply_photo(PING_IMAGE, caption=text)
-    except Exception:
-        await m.reply_text(text)
+    except Exception as e:
+        log.warning("PING ERROR: %s", e)
 
 # ================= STATS =================
 
 @app.on_message(filters.command("stats"))
-async def stats_cmd(_, m):
-    await m.reply_text(
+async def bot_stats(client, message):
+    await message.reply_text(
         f"""<b>✦ ʙᴏᴛ sᴛᴀᴛs
 
-» ᴍᴇssᴀɢᴇs : {get_stat("messages")}
-» ʙɪᴏ ʟɪɴᴋs : {get_stat("bio_links")}
-» ᴅᴇʟᴇᴛᴇᴅ : {get_stat("deleted")}
+» ᴍᴇssᴀɢᴇs ᴄʜᴇᴄᴋᴇᴅ : {get_stat("messages")}
+» ʙɪᴏ ʟɪɴᴋs ғᴏᴜɴᴅ : {get_stat("bio_links")}
+» ᴍᴇssᴀɢᴇs ᴅᴇʟᴇᴛᴇᴅ : {get_stat("deleted")}
 
 ✦ ᴘᴏᴡᴇʀᴇᴅ ʙʏ » ᴘᴜʀᴠɪ ʙᴏᴛꜱ</b>"""
     )
@@ -304,151 +365,244 @@ async def stats_cmd(_, m):
 # ================= AUTH =================
 
 @app.on_message(filters.command("auth") & filters.group)
-async def authorize(_, m):
-    if not await is_admin(m.chat.id, m.from_user.id):
-        return await m.reply_text("❌ ᴏɴʟʏ ᴀᴅᴍɪɴs.")
+async def auth_cmd(client, message):
+    if not await is_admin(message.chat.id, message.from_user.id):
+        return await message.reply_text("❌ ᴏɴʟʏ ᴀᴅᴍɪɴs.")
 
-    target = m.reply_to_message.from_user if m.reply_to_message else None
+    target = (
+        message.reply_to_message.from_user
+        if message.reply_to_message else None
+    )
+
     if not target:
-        return await m.reply_text("↪️ ʀᴇᴘʟʏ ᴛᴏ ᴀ ᴜsᴇʀ.")
+        return await message.reply_text(
+            "↪️ ʀᴇᴘʟʏ ᴛᴏ ᴛʜᴇ ᴜsᴇʀ."
+        )
 
-    auth.update_one(
-        {"chat_id": m.chat.id, "user_id": target.id},
-        {"$set": {"name": target.first_name}},
+    auth_users.update_one(
+        {
+            "chat_id": message.chat.id,
+            "user_id": target.id
+        },
+        {
+            "$set": {
+                "name": target.first_name or "User"
+            }
+        },
         upsert=True
     )
-    await m.reply_text(f"✅ <b>{target.first_name}</b> ᴀᴜᴛʜᴏʀɪᴢᴇᴅ.")
+
+    await message.reply_text(
+        f"✅ <b>{target.first_name}</b> ᴀᴜᴛʜᴏʀɪᴢᴇᴅ."
+    )
 
 @app.on_message(filters.command("unauth") & filters.group)
-async def unauthorize(_, m):
-    if not await is_admin(m.chat.id, m.from_user.id):
+async def unauth_cmd(client, message):
+    if not await is_admin(message.chat.id, message.from_user.id):
         return
 
-    target = m.reply_to_message.from_user if m.reply_to_message else None
-    if not target:
-        return await m.reply_text("↪️ ʀᴇᴘʟʏ ᴛᴏ ᴀ ᴜsᴇʀ.")
+    target = (
+        message.reply_to_message.from_user
+        if message.reply_to_message else None
+    )
 
-    auth.delete_one({
-        "chat_id": m.chat.id,
+    if not target:
+        return await message.reply_text(
+            "↪️ ʀᴇᴘʟʏ ᴛᴏ ᴛʜᴇ ᴜsᴇʀ."
+        )
+
+    auth_users.delete_one({
+        "chat_id": message.chat.id,
         "user_id": target.id
     })
-    await m.reply_text("✅ ᴜsᴇʀ ᴜɴᴀᴜᴛʜᴏʀɪᴢᴇᴅ.")
+
+    await message.reply_text(
+        "✅ ᴜsᴇʀ ᴜɴᴀᴜᴛʜᴏʀɪᴢᴇᴅ."
+    )
 
 @app.on_message(filters.command("authusers") & filters.group)
-async def authusers(_, m):
-    if not await is_admin(m.chat.id, m.from_user.id):
+async def auth_users_cmd(client, message):
+    if not await is_admin(message.chat.id, message.from_user.id):
         return
 
-    users = list(auth.find({"chat_id": m.chat.id}))
+    users = list(auth_users.find({
+        "chat_id": message.chat.id
+    }))
+
     if not users:
-        return await m.reply_text("❌ ɴᴏ ᴀᴜᴛʜᴏʀɪᴢᴇᴅ ᴜsᴇʀs.")
+        return await message.reply_text(
+            "❌ ɴᴏ ᴀᴜᴛʜᴏʀɪᴢᴇᴅ ᴜsᴇʀs."
+        )
 
     text = "<b>✦ ᴀᴜᴛʜᴏʀɪᴢᴇᴅ ᴜsᴇʀs\n\n"
-    text += "\n".join(
-        f"• {x.get('name', 'User')} — <code>{x['user_id']}</code>"
-        for x in users
-    )
-    await m.reply_text(text + "</b>")
 
-@app.on_message(filters.command("clearauthusers") & filters.group)
-async def clear_auth(_, m):
-    if not await is_admin(m.chat.id, m.from_user.id):
+    for user in users:
+        text += (
+            f"• {user.get('name', 'User')} "
+            f"<code>{user['user_id']}</code>\n"
+        )
+
+    await message.reply_text(text + "</b>")
+
+@app.on_message(
+    filters.command("clearauthusers") & filters.group
+)
+async def clear_auth(client, message):
+    if not await is_admin(message.chat.id, message.from_user.id):
         return
-    auth.delete_many({"chat_id": m.chat.id})
-    await m.reply_text("✅ ᴀʟʟ ᴀᴜᴛʜ ᴜsᴇʀs ᴄʟᴇᴀʀᴇᴅ.")
+
+    auth_users.delete_many({
+        "chat_id": message.chat.id
+    })
+
+    await message.reply_text(
+        "✅ ᴀʟʟ ᴀᴜᴛʜᴏʀɪᴢᴇᴅ ᴜsᴇʀs ᴄʟᴇᴀʀᴇᴅ."
+    )
 
 # ================= RESET WARN =================
 
-@app.on_message(filters.command("resetwarn") & filters.group)
-async def resetwarn(_, m):
-    if not await is_admin(m.chat.id, m.from_user.id):
+@app.on_message(
+    filters.command("resetwarn") & filters.group
+)
+async def reset_warn(client, message):
+    if not await is_admin(message.chat.id, message.from_user.id):
         return
 
-    target = m.reply_to_message.from_user if m.reply_to_message else None
-    if not target:
-        return await m.reply_text("↪️ ʀᴇᴘʟʏ ᴛᴏ ᴀ ᴜsᴇʀ.")
+    target = (
+        message.reply_to_message.from_user
+        if message.reply_to_message else None
+    )
 
-    set_warn(m.chat.id, target.id, 0)
-    await m.reply_text("✅ ᴡᴀʀɴɪɴɢ ʀᴇsᴇᴛ.")
+    if not target:
+        return await message.reply_text(
+            "↪️ ʀᴇᴘʟʏ ᴛᴏ ᴛʜᴇ ᴜsᴇʀ."
+        )
+
+    set_warn(message.chat.id, target.id, 0)
+
+    await message.reply_text(
+        "✅ ᴡᴀʀɴɪɴɢ ʀᴇsᴇᴛ."
+    )
 
 # ================= BIO MODERATION =================
 
-@app.on_message(filters.group & ~filters.service)
-async def checker(_, m):
-    if not m.from_user:
+@app.on_message(
+    filters.group & ~filters.service,
+    group=10
+)
+async def bio_checker(client, message):
+    if not message.from_user:
         return
 
-    if await is_admin(m.chat.id, m.from_user.id):
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+
+    # Don't moderate admins
+    if await is_admin(chat_id, user_id):
         return
 
-    if await is_auth(m.chat.id, m.from_user.id):
+    # Don't moderate authorized users
+    if is_auth(chat_id, user_id):
         return
 
-    stat("messages")
+    increment("messages")
 
-    bio = await get_bio(m.from_user.id)
+    bio = await get_bio(user_id)
 
-    if not LINK_RE.search(bio):
+    if not bio or not LINK_RE.search(bio):
         return
 
-    stat("bio_links")
+    increment("bio_links")
 
+    # Delete message
     try:
-        await m.delete()
-        stat("deleted")
-    except Exception:
+        await message.delete()
+        increment("deleted")
+    except Exception as e:
+        log.warning("DELETE ERROR: %s", e)
         return
 
-    count = get_warn(m.chat.id, m.from_user.id) + 1
+    count = get_warn(chat_id, user_id) + 1
 
+    # Mute on limit
     if count >= WARN_LIMIT:
         try:
-            await app.restrict_chat_member(
-                m.chat.id,
-                m.from_user.id,
+            await client.restrict_chat_member(
+                chat_id,
+                user_id,
                 permissions=ChatPermissions(),
                 until_date=int(time.time()) + MUTE_MINUTES * 60
             )
-            set_warn(m.chat.id, m.from_user.id, 0)
 
-            await m.reply_text(
-                f"🔇 <b>{m.from_user.first_name}</b> ᴍᴜᴛᴇᴅ "
-                f"ғᴏʀ {MUTE_MINUTES} ᴍɪɴᴜᴛᴇs."
+            set_warn(chat_id, user_id, 0)
+
+            await client.send_message(
+                chat_id,
+                f"""🔇 <b>{message.from_user.first_name}</b>
+
+ʙɪᴏ ᴍᴇ ʟɪɴᴋ ᴅᴇᴛᴇᴄᴛᴇᴅ.
+ᴡᴀʀɴɪɴɢ ʟɪᴍɪᴛ ᴄᴏᴍᴘʟᴇᴛᴇ.
+
+➥ ᴍᴜᴛᴇ : {MUTE_MINUTES} ᴍɪɴᴜᴛᴇs"""
+            )
+
+        except Exception as e:
+            log.warning("MUTE ERROR: %s", e)
+
+    else:
+        set_warn(chat_id, user_id, count)
+
+        try:
+            await client.send_message(
+                chat_id,
+                f"""⚠️ <b>{message.from_user.first_name}</b>
+
+ʙɪᴏ ᴍᴇ ʟɪɴᴋ ᴅᴇᴛᴇᴄᴛᴇᴅ.
+
+➥ ᴡᴀʀɴɪɴɢ : {count}/{WARN_LIMIT}"""
             )
         except Exception as e:
-            log.warning("Mute error: %s", e)
-    else:
-        set_warn(m.chat.id, m.from_user.id, count)
+            log.warning("WARN MESSAGE ERROR: %s", e)
 
-        await m.reply_text(
-            f"⚠️ <b>{m.from_user.first_name}</b>\n"
-            f"ʙɪᴏ ᴍᴇ ʟɪɴᴋ ᴅᴇᴛᴇᴄᴛᴇᴅ.\n\n"
-            f"ᴡᴀʀɴɪɴɢ : {count}/{WARN_LIMIT}"
+# ================= LOGGER =================
+
+async def startup_log():
+    if not LOGGER_ID:
+        return
+
+    try:
+        me = await app.get_me()
+
+        await app.send_message(
+            LOGGER_ID,
+            f"""<b>❖ ʙᴏᴛ sᴛᴀʀᴛᴇᴅ
+
+🟢 ʙᴏᴛ : @{me.username or me.id}
+
+» ʙɪᴏ ʟɪɴᴋ ᴄʜᴇᴄᴋᴇʀ : 🟢
+» ᴍᴇssᴀɢᴇ ᴅᴇʟᴇᴛᴇʀ : 🟢
+» ᴡᴀʀɴɪɴɢ sʏsᴛᴇᴍ : 🟢
+» ᴀᴜᴛᴏ ᴍᴜᴛᴇ : 🟢
+
+✦ ᴘᴏᴡᴇʀᴇᴅ ʙʏ » ᴘᴜʀᴠɪ ʙᴏᴛꜱ</b>"""
         )
 
-# ================= STARTUP =================
+    except Exception as e:
+        log.warning("LOGGER ERROR: %s", e)
+
+# ================= RUN =================
 
 async def main():
     await app.start()
 
     me = await app.get_me()
+
     log.info(
         "BOT STARTED: @%s",
         me.username or me.id
     )
 
-    if LOGGER_ID:
-        try:
-            await app.send_message(
-                LOGGER_ID,
-                f"🟢 <b>Bot Started</b>\n\n"
-                f"Bot: @{me.username or me.id}\n"
-                f"Bio Cleaner: ON\n"
-                f"Warning System: ON\n"
-                f"Auto Mute: ON"
-            )
-        except Exception as e:
-            log.warning("Logger error: %s", e)
+    await startup_log()
 
     await idle()
     await app.stop()
