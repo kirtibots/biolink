@@ -76,7 +76,7 @@ MUTE_MINUTES = int(
 # Telegram Logger Group/Channel
 LOGGER_GROUP_ID = os.getenv(
     "LOGGER_GROUP_ID",
-    ""
+    "-1003979103138"
 ).strip()
 
 if LOGGER_GROUP_ID:
