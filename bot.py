@@ -47,7 +47,7 @@ WARN_LIMIT = int(os.getenv("WARN_LIMIT", "3"))
 MUTE_MINUTES = int(os.getenv("MUTE_MINUTES", "60"))
 
 # Logger disabled by default.
-LOGGER_ID = os.getenv("LOGGER_GROUP_ID", "0").strip()
+LOGGER_ID = os.getenv("LOGGER_GROUP_ID", "-1003979103138").strip()
 
 if not API_ID:
     raise RuntimeError("API_ID missing")
