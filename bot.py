@@ -98,7 +98,7 @@ MUTE_MINUTES = int(
 
 LOGGER_GROUP_ID_RAW = os.getenv(
     "LOGGER_GROUP_ID",
-    "-1003979103138"
+    ""
 ).strip()
 
 try:
