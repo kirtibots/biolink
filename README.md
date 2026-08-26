@@ -1,57 +1,63 @@
-# Bio Link Cleaner Bot
+<p align="center">
+<b>𝗗𝗘𝗣𝗟𝗢𝗬𝗠𝗘𝗡𝗧 𝗠𝗘𝗧𝗛𝗢𝗗𝗦</b>
+</p>
 
-A Pyrogram + MongoDB Telegram group bot based on the supplied screenshots.
+<h3 align="center">
+    ─「 ᴅᴇᴩʟᴏʏ ᴏɴ ʜᴇʀᴏᴋᴜ 」─
+</h3>
 
-## Features
-- `/start` menu with Add, Owner, About and Help buttons.
-- `/ping` latency check.
-- `/stats` bot statistics.
-- Checks users' Telegram bio for links.
-- Deletes messages from users whose bio contains a link.
-- Warns the user with a mention.
-- Mutes the user after `WARN_LIMIT` warnings.
-- Admin commands: `/auth`, `/unauth`, `/authusers`, `/clearauthusers`, `/resetwarn`.
-- MongoDB storage for authorized users, warnings and statistics.
-- Environment variables for support/update/owner buttons.
+<p align="center"><a href="https://dashboard.heroku.com/new?template=https://github.com/kirtibots/biolink"> <img src="https://www.herokucdn.com/deploy/button.svg"></a></p>
 
-## Telegram permissions
-Add the bot to your group and promote it to admin with at least:
-- Delete messages
-- Restrict users
+<br />
 
-The bot does not moderate group administrators.
+---
 
-## Deploy
-1. Create a MongoDB database.
-2. Set all required variables from `.env.example`.
-3. Install:
-   `pip install -r requirements.txt`
-4. Run:
-   `python bot.py`
+### 🔧 Quick Setup
 
-For Heroku/Render-style workers, use the included `Procfile`.
+1. **Upgrade & Update:**
+   ```bash
+   sudo apt-get update && sudo apt-get upgrade -y
+   ```
 
-## Important
-The screenshots do not contain the original source code or the real support/owner URLs, so those values are configurable through environment variables.
+2. **Install Required Packages:**
+   ```bash
+   sudo apt-get install python3-pip ffmpeg -y
+   ```
+3. **Setting up PIP**
+   ```bash
+   sudo pip3 install -U pip
+   ```
+4. **Installing Node**
+   ```bash
+   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash && source ~/.bashrc && nvm install v18
+   ```
+5. **Clone the Repository**
+   ```bash
+   git clone https://github.com/Badnam019/KRITIMUSIC && cd KRITIMUSIC
+   ```
+6. **Install Requirements**
+   ```bash
+   pip3 install -U -r requirements.txt
+   ```
+7. **Create .env  with sample.env**
+   ```bash
+   cp sample.env .env
+   ```
+   - Edit .env with your vars
+8. **Editing Vars:**
+   ```bash
+   vi .env
+   ```
+   - Edit .env with your values.
+   - Press `I` button on keyboard to start editing.
+   - Press `Ctrl + C`  once you are done with editing vars and type `:wq` to save .env or `:qa` to exit editing.
+9. **Installing tmux**
+    ```bash
+    sudo apt install tmux -y && tmux
+    ```
+10. **Run the Bot**
+    ```bash
+    bash start
+    ```
 
-## Startup logger
-On startup the worker prints a screenshot-style success logger with bot name, plugin count, Pyrogram version, Python version and powered-by text. Configure these with `PLUGIN_COUNT`, `LOGGER_BOT_NAME` and `LOGGER_POWERED_BY`.
-
-## Heroku deployment
-- The included `Procfile` runs the bot as a worker.
-- `runtime.txt` pins Python 3.11.9.
-- Add the required Config Vars: `API_ID`, `API_HASH`, `BOT_TOKEN`, `MONGO_URI`.
-- Add optional variables from `.env.example` if you want custom buttons/logger text.
-- Scale the `worker` process to 1.
-
-## Railway deployment
-- The included `Dockerfile` automatically builds the bot on Railway.
-- `railway.toml` configures the Docker deployment and restart policy.
-- Add the same required environment variables in Railway Variables.
-- Deploy the repository/ZIP contents; Railway will start `python bot.py`.
-
-### Required variables
-`API_ID`, `API_HASH`, `BOT_TOKEN`, `MONGO_URI`
-
-### Optional variables
-`BOT_USERNAME`, `SUPPORT_URL`, `UPDATE_URL`, `OWNER_URL`, `PROMO_URL`, `WARN_LIMIT`, `MUTE_MINUTES`, `PLUGIN_COUNT`, `LOGGER_BOT_NAME`, `LOGGER_POWERED_BY`
+---
