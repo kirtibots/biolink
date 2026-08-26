@@ -98,7 +98,7 @@ MUTE_MINUTES = int(
 
 LOGGER_GROUP_ID_RAW = os.getenv(
     "LOGGER_GROUP_ID",
-    "-1003979103138"
+    ""
 ).strip()
 
 try:
@@ -112,12 +112,12 @@ PLUGIN_COUNT = int(
 
 LOGGER_BOT_NAME = os.getenv(
     "LOGGER_BOT_NAME",
-    "kirti 🐒"
+    "Purvi 🐒"
 )
 
 LOGGER_POWERED_BY = os.getenv(
     "LOGGER_POWERED_BY",
-    "kirti-BOTS"
+    "PURVI-BOTS"
 )
 
 BOT_START_TIME = time.time()
