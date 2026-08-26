@@ -1,0 +1,63 @@
+{
+  "name": "bio-link-cleaner",
+  "description": "Bio Link Cleaner Telegram Bot",
+  "buildpacks": [
+    {
+      "url": "https://github.com/heroku/heroku-buildpack-python"
+    }
+  ],
+  "env": {
+    "API_ID": {
+      "description": "Telegram API ID",
+      "required": true
+    },
+    "API_HASH": {
+      "description": "Telegram API Hash",
+      "required": true
+    },
+    "BOT_TOKEN": {
+      "description": "Telegram Bot Token",
+      "required": true
+    },
+    "MONGO_URI": {
+      "description": "MongoDB connection URI",
+      "required": true
+    },
+    "BOT_USERNAME": {
+      "description": "Bot username without @",
+      "required": false,
+      "value": "BiolinkCleanerBot"
+    },
+    "PLUGIN_COUNT": {
+      "description": "Startup logger plugin count",
+      "required": false,
+      "value": "15"
+    },
+    "LOGGER_BOT_NAME": {
+      "description": "Startup logger bot name",
+      "required": false,
+      "value": "Purvi 🐒"
+    },
+    "LOGGER_POWERED_BY": {
+      "description": "Startup logger powered-by text",
+      "required": false,
+      "value": "PURVI-BOTS"
+    },
+    "WARN_LIMIT": {
+      "description": "Warnings before mute",
+      "required": false,
+      "value": "3"
+    },
+    "MUTE_MINUTES": {
+      "description": "Mute duration in minutes",
+      "required": false,
+      "value": "60"
+    }
+  },
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "eco"
+    }
+  }
+}
