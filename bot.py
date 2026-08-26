@@ -18,8 +18,6 @@ from pyrogram.types import (
     InlineKeyboardButton,
     ChatPermissions,
 )
-from pyrogram.raw.functions.users import GetFullUser
-from pyrogram.raw.types import InputUser
 
 
 # ============================================================
@@ -86,13 +84,11 @@ logging.basicConfig(
     format="[%(asctime)s] [%(levelname)s] %(name)s: %(message)s"
 )
 
-log = logging.getLogger(
-    "BIO-LINK-CLEANER"
-)
+log = logging.getLogger("BIO-LINK-CLEANER")
 
 
 # ============================================================
-# ENV CHECK
+# CHECK ENV
 # ============================================================
 
 if not API_ID:
@@ -109,7 +105,7 @@ if not MONGO_URI:
 
 
 # ============================================================
-# PYROGRAM
+# APP
 # ============================================================
 
 app = Client(
@@ -121,7 +117,7 @@ app = Client(
 
 
 # ============================================================
-# MONGODB
+# MONGO
 # ============================================================
 
 mongo = MongoClient(
@@ -138,7 +134,7 @@ stats = db["stats"]
 
 
 # ============================================================
-# START TEXT
+# START
 # ============================================================
 
 START_TEXT = """
@@ -241,16 +237,11 @@ HELP_TEXT = """
 
 def start_keyboard():
 
-    add_url = (
-        f"https://t.me/{BOT_USERNAME}"
-        "?startgroup=true"
-    )
-
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
                 "⊞ ᴀᴅᴅ ᴍᴇ ɪɴ ʏᴏᴜʀ ɢʀᴏᴜᴘ ⊞",
-                url=add_url
+                url=f"https://t.me/{BOT_USERNAME}?startgroup=true"
             )
         ],
         [
@@ -312,16 +303,11 @@ def help_keyboard():
 
 def warning_keyboard():
 
-    add_url = (
-        f"https://t.me/{BOT_USERNAME}"
-        "?startgroup=true"
-    )
-
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
                 "✚ ᴀᴅᴅ ᴍᴇ",
-                url=add_url
+                url=f"https://t.me/{BOT_USERNAME}?startgroup=true"
             ),
             InlineKeyboardButton(
                 "👥 sᴜᴘᴘᴏʀᴛ",
@@ -332,102 +318,78 @@ def warning_keyboard():
 
 
 # ============================================================
-# LINK DETECTION
+# LINK DETECTOR
 # ============================================================
 
 LINK_PATTERNS = [
-
     r"https?://[^\s]+",
-
     r"www\.[^\s]+\.[a-z]{2,}",
-
     r"(?:t\.me|telegram\.me|telegram\.dog)/[^\s]+",
-
     r"tg://[^\s]+",
-
-    r"\b[a-z0-9-]+\."
-    r"(?:com|net|org|me|in|co|io|xyz|"
-    r"site|online|live|shop|dev|app|"
-    r"store|pro|tech|info|biz|cc|tv)\b",
-
+    r"\b[a-z0-9-]+\.(?:com|net|org|me|in|co|io|xyz|site|online|live|shop|dev|app|store|pro|tech|info|biz|cc|tv)\b",
 ]
 
 
 def has_bio_link(bio):
-
     if not bio:
         return False
 
     bio = str(bio).strip()
 
-    for pattern in LINK_PATTERNS:
-
-        if re.search(
+    return any(
+        re.search(
             pattern,
             bio,
             re.IGNORECASE
-        ):
-            return True
-
-    return False
+        )
+        for pattern in LINK_PATTERNS
+    )
 
 
 # ============================================================
-# GET FULL USER / BIO
+# FIXED BIO FETCH
 # ============================================================
 
-async def get_user_bio(
-    client,
-    user_id
-):
+async def get_user_bio(client, user_id):
 
     try:
-
-        # Get normal user first
-        user = await client.get_users(
-            user_id
-        )
-
-        if not user:
-            return ""
-
-        # Build InputUser
-        input_user = InputUser(
-            user_id=user.id,
-            access_hash=user.access_hash
-        )
-
-        # Telegram Full User
-        full_user = await client.invoke(
-            GetFullUser(
-                id=input_user
-            )
-        )
+        chat = await client.get_chat(user_id)
 
         bio = getattr(
-            full_user.full_user,
-            "about",
+            chat,
+            "bio",
             None
         )
 
-        if bio:
-            return str(bio).strip()
+        bio = str(bio).strip() if bio else ""
+
+        log.info(
+            "BIO FETCH | user=%s | bio=%r",
+            user_id,
+            bio
+        )
+
+        return bio
 
     except FloodWait as e:
 
         log.warning(
-            "Bio FloodWait: %s",
+            "Bio FloodWait | user=%s | wait=%s",
+            user_id,
             e.value
         )
 
-        await asyncio.sleep(
-            e.value
+        await asyncio.sleep(e.value)
+
+        return await get_user_bio(
+            client,
+            user_id
         )
 
     except RPCError as e:
 
         log.warning(
-            "GetFullUser failed for %s: %s",
+            "Bio RPC error | user=%s | %s",
             user_id,
             e
         )
@@ -435,7 +397,7 @@ async def get_user_bio(
     except Exception as e:
 
         log.warning(
-            "Bio fetch error for %s: %s",
+            "Bio fetch error | user=%s | %s",
             user_id,
             e
         )
@@ -444,7 +406,7 @@ async def get_user_bio(
 
 
 # ============================================================
-# ADMIN / OWNER
+# ADMIN / OWNER CHECK
 # ============================================================
 
 async def is_admin_or_owner(
@@ -462,13 +424,13 @@ async def is_admin_or_owner(
 
         status = member.status
 
-        if status == ChatMemberStatus.OWNER:
+        if status in (
+            ChatMemberStatus.OWNER,
+            ChatMemberStatus.ADMINISTRATOR
+        ):
             return True
 
-        if status == ChatMemberStatus.ADMINISTRATOR:
-            return True
-
-        status_value = str(
+        value = str(
             getattr(
                 status,
                 "value",
@@ -476,7 +438,7 @@ async def is_admin_or_owner(
             )
         ).lower()
 
-        return status_value in (
+        return value in (
             "owner",
             "administrator",
             "creator"
@@ -497,7 +459,7 @@ async def is_admin_or_owner(
     except Exception as e:
 
         log.warning(
-            "Admin check failed: %s",
+            "Admin check error | %s",
             e
         )
 
@@ -520,7 +482,7 @@ async def can_manage(
 
 
 # ============================================================
-# DATABASE HELPERS
+# DATABASE
 # ============================================================
 
 def inc_stat(
@@ -532,11 +494,7 @@ def inc_stat(
 
         stats.update_one(
             {"_id": key},
-            {
-                "$inc": {
-                    "value": amount
-                }
-            },
+            {"$inc": {"value": amount}},
             upsert=True
         )
 
@@ -556,18 +514,13 @@ def get_stat(key):
             {"_id": key}
         )
 
-        if data:
-            return int(
-                data.get(
-                    "value",
-                    0
-                )
-            )
+        return int(
+            data.get("value", 0)
+        ) if data else 0
 
     except Exception:
-        pass
 
-    return 0
+        return 0
 
 
 def get_warn(
@@ -582,18 +535,13 @@ def get_warn(
             "user_id": user_id
         })
 
-        if data:
-            return int(
-                data.get(
-                    "count",
-                    0
-                )
-            )
+        return int(
+            data.get("count", 0)
+        ) if data else 0
 
     except Exception:
-        pass
 
-    return 0
+        return 0
 
 
 def set_warn(
@@ -623,13 +571,10 @@ def is_authorized(
 
     try:
 
-        return (
-            auth_users.find_one({
-                "chat_id": chat_id,
-                "user_id": user_id
-            })
-            is not None
-        )
+        return auth_users.find_one({
+            "chat_id": chat_id,
+            "user_id": user_id
+        }) is not None
 
     except Exception:
 
@@ -637,7 +582,7 @@ def is_authorized(
 
 
 # ============================================================
-# GET TARGET USER
+# TARGET USER
 # ============================================================
 
 async def get_target(message):
@@ -649,22 +594,13 @@ async def get_target(message):
             and
             message.reply_to_message.from_user
         ):
+            return message.reply_to_message.from_user
 
-            return (
-                message.reply_to_message.from_user
-            )
+        if len(message.command) > 1:
 
-        if len(
-            message.command
-        ) > 1:
-
-            target = (
-                message.command[1]
-                .strip()
-            )
+            target = message.command[1].strip()
 
             if target.lstrip("-").isdigit():
-
                 return await app.get_users(
                     int(target)
                 )
@@ -691,36 +627,27 @@ async def get_target(message):
     filters.command("start") &
     filters.private
 )
-async def start_private(
-    _,
-    message
-):
+async def start_private(_, message):
 
     try:
 
-        if os.path.isfile(
-            START_IMAGE_PATH
-        ):
-
-            await message.reply_photo(
-                photo=START_IMAGE_PATH,
-                caption=START_TEXT,
-                reply_markup=start_keyboard()
-            )
-
-        else:
-
-            await message.reply_text(
-                START_TEXT,
-                reply_markup=start_keyboard(),
-                disable_web_page_preview=True
-            )
+        await message.reply_photo(
+            photo=START_IMAGE_PATH,
+            caption=START_TEXT,
+            reply_markup=start_keyboard()
+        )
 
     except Exception as e:
 
         log.warning(
-            "Start error: %s",
+            "Start image failed: %s",
             e
+        )
+
+        await message.reply_text(
+            START_TEXT,
+            reply_markup=start_keyboard(),
+            disable_web_page_preview=True
         )
 
 
@@ -728,36 +655,27 @@ async def start_private(
     filters.command("start") &
     filters.group
 )
-async def start_group(
-    _,
-    message
-):
+async def start_group(_, message):
 
     try:
 
-        if os.path.isfile(
-            START_IMAGE_PATH
-        ):
-
-            await message.reply_photo(
-                photo=START_IMAGE_PATH,
-                caption=START_TEXT,
-                reply_markup=start_keyboard()
-            )
-
-        else:
-
-            await message.reply_text(
-                START_TEXT,
-                reply_markup=start_keyboard(),
-                disable_web_page_preview=True
-            )
+        await message.reply_photo(
+            photo=START_IMAGE_PATH,
+            caption=START_TEXT,
+            reply_markup=start_keyboard()
+        )
 
     except Exception as e:
 
         log.warning(
-            "Group start error: %s",
+            "Group start image failed: %s",
             e
+        )
+
+        await message.reply_text(
+            START_TEXT,
+            reply_markup=start_keyboard(),
+            disable_web_page_preview=True
         )
 
 
@@ -766,10 +684,7 @@ async def start_group(
 # ============================================================
 
 @app.on_callback_query()
-async def callbacks(
-    _,
-    query
-):
+async def callbacks(_, query):
 
     try:
 
@@ -817,10 +732,7 @@ async def callbacks(
 @app.on_message(
     filters.command("ping")
 )
-async def ping(
-    _,
-    message
-):
+async def ping(_, message):
 
     try:
 
@@ -832,15 +744,13 @@ async def ping(
 
         ping_ms = round(
             (
-                time.perf_counter()
-                - started
+                time.perf_counter() - started
             ) * 1000,
             2
         )
 
         uptime = int(
-            time.time()
-            - BOT_START_TIME
+            time.time() - BOT_START_TIME
         )
 
         days, remainder = divmod(
@@ -858,22 +768,12 @@ async def ping(
             60
         )
 
-        if days:
-
-            uptime_text = (
-                f"{days}ᴅ:"
-                f"{hours}ʜ:"
-                f"{minutes}ᴍ:"
-                f"{seconds}s"
-            )
-
-        else:
-
-            uptime_text = (
-                f"{hours}ʜ:"
-                f"{minutes}ᴍ:"
-                f"{seconds}s"
-            )
+        uptime_text = (
+            f"{days}ᴅ:{hours}ʜ:{minutes}ᴍ:{seconds}s"
+            if days
+            else
+            f"{hours}ʜ:{minutes}ᴍ:{seconds}s"
+        )
 
         ping_text = f"""
 <b>ʜєʏ ʙᴧʙʏ !!
@@ -887,26 +787,15 @@ async def ping(
 ✦ 𝐏σᴡєʀєᴅ вʏ » ᴘᴜʀᴠɪ ʙᴏᴛꜱ</b>
 """
 
-        if os.path.isfile(
-            PING_IMAGE_PATH
-        ):
+        try:
+            await temp.delete()
+        except Exception:
+            pass
 
-            try:
-                await temp.delete()
-            except Exception:
-                pass
-
-            await message.reply_photo(
-                photo=PING_IMAGE_PATH,
-                caption=ping_text
-            )
-
-        else:
-
-            await temp.edit_text(
-                ping_text,
-                disable_web_page_preview=True
-            )
+        await message.reply_photo(
+            photo=PING_IMAGE_PATH,
+            caption=ping_text
+        )
 
     except Exception as e:
 
@@ -923,10 +812,7 @@ async def ping(
 @app.on_message(
     filters.command("stats")
 )
-async def bot_stats(
-    _,
-    message
-):
+async def bot_stats(_, message):
 
     text = f"""
 <b>✦ ʙᴏᴛ sᴛᴀᴛs
@@ -944,9 +830,7 @@ async def bot_stats(
 {get_stat("warnings")}</b>
 """
 
-    await message.reply_text(
-        text
-    )
+    await message.reply_text(text)
 
 
 # ============================================================
@@ -957,29 +841,22 @@ async def bot_stats(
     filters.command("auth") &
     filters.group
 )
-async def auth_cmd(
-    _,
-    message
-):
+async def auth_cmd(_, message):
 
     if not await can_manage(
         app,
         message
     ):
-
         return await message.reply_text(
             "<b>❌ ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs "
             "ᴀɴᴅ ᴏᴡɴᴇʀs ᴄᴀɴ ᴜsᴇ ᴛʜɪs.</b>"
         )
 
-    target = await get_target(
-        message
-    )
+    target = await get_target(message)
 
     if not target:
-
         return await message.reply_text(
-            "<b>» ʀᴇᴘʟʏ ᴛᴏ ᴜsᴇʀ ᴏʀ "
+            "<b>» ʀᴇᴘʟʏ ᴛᴏ ᴀ ᴜsᴇʀ ᴏʀ ᴜsᴇ "
             "/auth user_id</b>"
         )
 
@@ -1011,29 +888,22 @@ async def auth_cmd(
     filters.command("unauth") &
     filters.group
 )
-async def unauth_cmd(
-    _,
-    message
-):
+async def unauth_cmd(_, message):
 
     if not await can_manage(
         app,
         message
     ):
-
         return await message.reply_text(
             "<b>❌ ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs "
             "ᴀɴᴅ ᴏᴡɴᴇʀs ᴄᴀɴ ᴜsᴇ ᴛʜɪs.</b>"
         )
 
-    target = await get_target(
-        message
-    )
+    target = await get_target(message)
 
     if not target:
-
         return await message.reply_text(
-            "<b>» ʀᴇᴘʟʏ ᴛᴏ ᴜsᴇʀ ᴏʀ "
+            "<b>» ʀᴇᴘʟʏ ᴛᴏ ᴀ ᴜsᴇʀ ᴏʀ ᴜsᴇ "
             "/unauth user_id</b>"
         )
 
@@ -1064,29 +934,26 @@ async def unauth_cmd(
     filters.command("authusers") &
     filters.group
 )
-async def authusers_cmd(
-    _,
-    message
-):
+async def authusers_cmd(_, message):
 
     if not await can_manage(
         app,
         message
     ):
-
         return await message.reply_text(
             "<b>❌ ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs "
             "ᴀɴᴅ ᴏᴡɴᴇʀs ᴄᴀɴ ᴜsᴇ ᴛʜɪs.</b>"
         )
 
     rows = list(
-        auth_users.find({
-            "chat_id": message.chat.id
-        }).limit(50)
+        auth_users.find(
+            {
+                "chat_id": message.chat.id
+            }
+        ).limit(50)
     )
 
     if not rows:
-
         return await message.reply_text(
             "<b>» ɴᴏ ᴀᴜᴛʜᴏʀɪᴢᴇᴅ ᴜsᴇʀs ғᴏᴜɴᴅ.</b>"
         )
@@ -1116,7 +983,7 @@ async def authusers_cmd(
 
         lines.append(
             f"<b>{i}. {name} "
-            f"({row.get('user_id')})</b>"
+            f"<code>{row.get('user_id')}</code></b>"
         )
 
     await message.reply_text(
@@ -1125,23 +992,19 @@ async def authusers_cmd(
 
 
 # ============================================================
-# CLEAR AUTH
+# CLEAR AUTH USERS
 # ============================================================
 
 @app.on_message(
     filters.command("clearauthusers") &
     filters.group
 )
-async def clearauthusers_cmd(
-    _,
-    message
-):
+async def clearauthusers_cmd(_, message):
 
     if not await can_manage(
         app,
         message
     ):
-
         return await message.reply_text(
             "<b>❌ ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs "
             "ᴀɴᴅ ᴏᴡɴᴇʀs ᴄᴀɴ ᴜsᴇ ᴛʜɪs.</b>"
@@ -1166,29 +1029,22 @@ async def clearauthusers_cmd(
     filters.command("resetwarn") &
     filters.group
 )
-async def resetwarn_cmd(
-    _,
-    message
-):
+async def resetwarn_cmd(_, message):
 
     if not await can_manage(
         app,
         message
     ):
-
         return await message.reply_text(
             "<b>❌ ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs "
             "ᴀɴᴅ ᴏᴡɴᴇʀs ᴄᴀɴ ᴜsᴇ ᴛʜɪs.</b>"
         )
 
-    target = await get_target(
-        message
-    )
+    target = await get_target(message)
 
     if not target:
-
         return await message.reply_text(
-            "<b>» ʀᴇᴘʟʏ ᴛᴏ ᴜsᴇʀ ᴏʀ "
+            "<b>» ʀᴇᴘʟʏ ᴛᴏ ᴀ ᴜsᴇʀ ᴏʀ ᴜsᴇ "
             "/resetwarn user_id</b>"
         )
 
@@ -1199,27 +1055,20 @@ async def resetwarn_cmd(
     )
 
     await message.reply_text(
-        f"<b>♻️ ᴡᴀʀɴɪɴɢ ʀᴇsᴇᴛ ғᴏʀ "
+        f"<b>♻️ ᴡᴀʀɴɪɴɢ ᴄᴏᴜɴᴛ ʀᴇsᴇᴛ ғᴏʀ "
         f"{target.mention}</b>"
     )
 
 
 # ============================================================
-# BIO LINK MODERATION
+# BIO LINK CHECKER
 # ============================================================
 
 @app.on_message(
     filters.group &
     ~filters.service
 )
-async def bio_checker(
-    client,
-    message
-):
-
-    # --------------------------------------------------------
-    # IGNORE INVALID MESSAGES
-    # --------------------------------------------------------
+async def bio_checker(client, message):
 
     if not message.from_user:
         return
@@ -1231,7 +1080,7 @@ async def bio_checker(
     user_id = message.from_user.id
 
     # --------------------------------------------------------
-    # ADMIN / OWNER EXEMPT
+    # ADMIN + OWNER EXEMPT
     # --------------------------------------------------------
 
     if await is_admin_or_owner(
@@ -1256,7 +1105,7 @@ async def bio_checker(
     )
 
     # --------------------------------------------------------
-    # FETCH PROFILE BIO
+    # GET BIO
     # --------------------------------------------------------
 
     bio = await get_user_bio(
@@ -1264,24 +1113,15 @@ async def bio_checker(
         user_id
     )
 
-    log.info(
-        "BIO CHECK | user=%s | bio=%r",
-        user_id,
-        bio
-    )
-
-    # --------------------------------------------------------
-    # NO LINK
-    # --------------------------------------------------------
-
-    if not has_bio_link(
-        bio
-    ):
+    if not bio:
         return
 
     # --------------------------------------------------------
-    # LINK FOUND
+    # LINK CHECK
     # --------------------------------------------------------
+
+    if not has_bio_link(bio):
+        return
 
     inc_stat(
         "bio_links"
@@ -1308,11 +1148,6 @@ async def bio_checker(
 
     except FloodWait as e:
 
-        log.warning(
-            "Delete FloodWait: %s",
-            e.value
-        )
-
         await asyncio.sleep(
             e.value
         )
@@ -1320,12 +1155,12 @@ async def bio_checker(
     except RPCError as e:
 
         log.warning(
-            "Delete failed: %s",
+            "Message delete failed: %s",
             e
         )
 
     # --------------------------------------------------------
-    # ADD WARNING
+    # WARNING
     # --------------------------------------------------------
 
     current = (
@@ -1367,7 +1202,7 @@ async def bio_checker(
                 until_date=until_date
             )
 
-            mute_text = f"""
+            text = f"""
 <b>🚨 𝐁ɪᴏ 𝐋ɪɴᴋ 𝐂ʟᴇᴀɴᴇʀ 🚨
 
 ⚠️ {mention} !!
@@ -1386,24 +1221,20 @@ async def bio_checker(
 
             await client.send_message(
                 chat_id,
-                mute_text,
+                text,
                 reply_markup=warning_keyboard(),
                 disable_web_page_preview=True
             )
 
-            # Reset after mute
             set_warn(
                 chat_id,
                 user_id,
                 0
             )
 
-        except FloodWait as e:
+            return
 
-            log.warning(
-                "Mute FloodWait: %s",
-                e.value
-            )
+        except FloodWait as e:
 
             await asyncio.sleep(
                 e.value
@@ -1416,22 +1247,13 @@ async def bio_checker(
                 e
             )
 
-        except Exception as e:
-
-            log.error(
-                "Mute error: %s",
-                e
-            )
-
-        return
-
     # ========================================================
     # WARNING
     # ========================================================
 
     try:
 
-        warning_text = f"""
+        text = f"""
 <b>🚨 𝐁ɪᴏ 𝐋ɪɴᴋ 𝐂ʟᴇᴀɴᴇʀ 🚨
 
 ⚠️ {mention} !!
@@ -1447,17 +1269,12 @@ async def bio_checker(
 
         await client.send_message(
             chat_id,
-            warning_text,
+            text,
             reply_markup=warning_keyboard(),
             disable_web_page_preview=True
         )
 
     except FloodWait as e:
-
-        log.warning(
-            "Warning FloodWait: %s",
-            e.value
-        )
 
         await asyncio.sleep(
             e.value
@@ -1470,47 +1287,12 @@ async def bio_checker(
             e
         )
 
-    except Exception as e:
-
-        log.error(
-            "Warning error: %s",
-            e
-        )
-
 
 # ============================================================
 # STARTUP
 # ============================================================
 
 def print_startup_logger():
-
-    try:
-
-        import sys
-
-        py_version = (
-            f"{sys.version_info.major}."
-            f"{sys.version_info.minor}."
-            f"{sys.version_info.micro}"
-        )
-
-    except Exception:
-
-        py_version = "Unknown"
-
-    try:
-
-        import pyrogram
-
-        pyro_version = getattr(
-            pyrogram,
-            "__version__",
-            "Unknown"
-        )
-
-    except Exception:
-
-        pyro_version = "Unknown"
 
     log.info(
         "╔══════════════════════════════════════════════════════╗"
@@ -1525,13 +1307,8 @@ def print_startup_logger():
     )
 
     log.info(
-        "║ • PYROGRAM :- %s",
-        pyro_version
-    )
-
-    log.info(
-        "║ • PYTHON   :- %s",
-        py_version
+        "║ • BOT      :- %s",
+        BOT_USERNAME
     )
 
     log.info(
@@ -1542,6 +1319,10 @@ def print_startup_logger():
     log.info(
         "║ • MUTE     :- %s MINUTES",
         MUTE_MINUTES
+    )
+
+    log.info(
+        "║ • BIO      :- ENABLED                               ║"
     )
 
     log.info(
